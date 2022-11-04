@@ -44,28 +44,37 @@ func main() {
 		fmt.Println()
 		line := iter.Current().Value()
 		fmt.Println(line)
+
+		expr3, err := xpath.Compile("//Folder[name='Líneas de Metro']/Placemark[name='" + line + "']/LineString/coordinates")
+		if err != nil {
+			panic(err)
+		}
+
+		var root2 xpath.NodeNavigator
+		root2 = xmlquery.CreateXPathNavigator(doc)
+		coor := expr3.Evaluate(root2)
+		var parseCor []string
+
+		iter3 := coor.(*xpath.NodeIterator)
+		for i := 1; iter3.MoveNext(); i++ {
+			cordinates := strings.TrimRight(iter3.Current().Value(), " \n")
+			parseCor = strings.Split(cordinates, "\n            ")
+			parseCor = parseCor[1:]
+		}
+
 		fmt.Println("\tSTATIONS:")
-		expr2 := xpath.MustCompile("//Folder[name='Estaciones de Metro']/Placemark[contains(description,'" + line + "')]/name")
-		stations := expr2.Evaluate(root)
-		iter2 := stations.(*xpath.NodeIterator)
+		for i := 0; i < len(parseCor); i++ {
+			cordinate := parseCor[i]
 
-		for i := 1; iter2.MoveNext(); i++ {
-			station := iter2.Current().Value()
-			fmt.Printf("\t%d. %s", i, strings.Trim(station, "\n"))
+			expr2 := xpath.MustCompile("//Folder[name='Estaciones de Metro']/Placemark/Point[contains(coordinates,'" + cordinate + "')]/preceding-sibling::*[3]")
+			stations := expr2.Evaluate(root)
+			iter2 := stations.(*xpath.NodeIterator)
 
-			expr3, err := xpath.Compile("//Folder[name='Estaciones de Metro']/Placemark[name='" + station + "']/Point/coordinates")
-			if err != nil {
-				panic(err)
+			for iter2.MoveNext() {
+				station := iter2.Current().Value()
+				fmt.Printf("\t%d. %s, %s \n", i+1, station, cordinate)
 			}
 
-			var root2 xpath.NodeNavigator
-			root2 = xmlquery.CreateXPathNavigator(doc)
-			coor := expr3.Evaluate(root2)
-
-			iter3 := coor.(*xpath.NodeIterator)
-			for iter3.MoveNext() {
-				fmt.Printf(", %s", strings.Trim(strings.Trim(iter3.Current().Value(), "\n"), " "))
-			}
 		}
 
 	}
