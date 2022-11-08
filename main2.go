@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/antchfx/xmlquery"
@@ -17,6 +15,10 @@ import (
 type node struct {
 	id          int
 	coordinates string
+}
+
+type nodeName struct {
+	name string
 }
 
 type segment struct {
@@ -54,16 +56,15 @@ func main() {
 	var root xpath.NodeNavigator
 	root = xmlquery.CreateXPathNavigator(doc)
 
-	nodes := getNodes(root)
+	nodes, nodeNames := getNodes(root)
 	segments := getSegments(root, nodes)
 
-	fillGraph(numberStations, segments, nodes[origin].id, nodes[destination].id)
-
-	//calculatePath(g, nodes[origin].id, nodes[destination].id)
+	fillGraph(numberStations, segments, nodes[origin].id, nodes[destination].id, nodeNames)
 }
 
-func getNodes(root xpath.NodeNavigator) map[string]node {
+func getNodes(root xpath.NodeNavigator) (map[string]node, map[int]nodeName) {
 	var nodes = make(map[string]node)
+	var nodeNames = make(map[int]nodeName)
 
 	expr := xpath.MustCompile("//Folder[name='Estaciones de Metro']/Placemark/name")
 	stations := expr.Evaluate(root)
@@ -79,12 +80,12 @@ func getNodes(root xpath.NodeNavigator) map[string]node {
 		for iter2.MoveNext() {
 			coords := strings.Trim(strings.Trim(strings.Trim(iter2.Current().Value(), "\n"), " "), "\n")
 
-			nodes[name] = node{
-				counter, coords,
-			}
+			nodes[name] = node{counter, coords}
+
+			nodeNames[counter] = nodeName{name}
 		}
 	}
-	return nodes
+	return nodes, nodeNames
 }
 
 func getSegments(root xpath.NodeNavigator, nodes map[string]node) map[int]segment {
@@ -100,7 +101,7 @@ func getSegments(root xpath.NodeNavigator, nodes map[string]node) map[int]segmen
 	for iterLines.MoveNext() {
 
 		line := iterLines.Current().Value()
-		// GET STATIONS COORDINATES
+		// GET STATIONS COORDINATES FOR THE CURRENT LINE
 		expr3 := xpath.MustCompile("//Folder[name='Líneas de Metro']/Placemark[name='" + line + "']/LineString/coordinates")
 
 		coor := expr3.Evaluate(root)
@@ -113,14 +114,17 @@ func getSegments(root xpath.NodeNavigator, nodes map[string]node) map[int]segmen
 			parseCor = parseCor[1:]
 		}
 
+		//fmt.Println()
 		for j := 0; j < len(parseCor); j++ {
 
 			cordinate := parseCor[j]
-			var nextcordinate string
+			var nextcordinate = ""
+
 			if j < len(parseCor)-1 {
 				nextcordinate = parseCor[j+1]
 			}
 
+			// GET STATION NAME FOR THE CURRENT COORDINATES
 			expr2 := xpath.MustCompile("//Folder[name='Estaciones de Metro']/Placemark/Point[contains(coordinates,'" + cordinate + "')]/preceding-sibling::*[3]")
 			stations := expr2.Evaluate(root)
 			iter2 := stations.(*xpath.NodeIterator)
@@ -128,11 +132,10 @@ func getSegments(root xpath.NodeNavigator, nodes map[string]node) map[int]segmen
 			for iter2.MoveNext() {
 				station := iter2.Current().Value()
 
-				var distanceNext int64
 				if j < len(parseCor)-1 {
 					var destination string
-					distanceNext = distance(cordinate, nextcordinate)
 
+					// GET STATION NAME FOR THE NEXT COORDINATES
 					expr3 := xpath.MustCompile("//Folder[name='Estaciones de Metro']/Placemark/Point[contains(coordinates,'" + nextcordinate + "')]/preceding-sibling::*[3]")
 					dest := expr3.Evaluate(root)
 					iter3 := dest.(*xpath.NodeIterator)
@@ -141,11 +144,14 @@ func getSegments(root xpath.NodeNavigator, nodes map[string]node) map[int]segmen
 						destination = iter3.Current().Value()
 					}
 
-					name := station + "-" + destination
-					segments[counter] = segment{
-						name, line, nodes[station].id, nodes[destination].id, distanceNext,
+					if destination != "" {
+						name := station + "-" + destination + " / " + destination + station
+						segments[counter] = segment{
+							name, line, nodes[station].id, nodes[destination].id, 1,
+						}
+						counter++
 					}
-					counter++
+
 				}
 			}
 		}
@@ -153,19 +159,7 @@ func getSegments(root xpath.NodeNavigator, nodes map[string]node) map[int]segmen
 	return segments
 }
 
-func distance(coord0, coord1 string) int64 {
-	coordenates0 := strings.Split(coord0, ",")
-	coordenates1 := strings.Split(coord1, ",")
-
-	x0, _ := strconv.ParseFloat(coordenates0[0], 64)
-	x1, _ := strconv.ParseFloat(coordenates1[0], 64)
-	y0, _ := strconv.ParseFloat(coordenates0[1], 64)
-	y1, _ := strconv.ParseFloat(coordenates1[1], 64)
-
-	return int64(math.Sqrt(((x0-x1)*(x0-x1))+((y0-y1)*(y0-y1))) * 1000000)
-}
-
-func fillGraph(numberStations int, segments map[int]segment, o int, d int) {
+func fillGraph(numberStations int, segments map[int]segment, o int, d int, nodeNames map[int]nodeName) {
 	g := graph.New(numberStations)
 
 	for i := 0; i < len(segments); i++ {
@@ -173,6 +167,25 @@ func fillGraph(numberStations int, segments map[int]segment, o int, d int) {
 	}
 
 	path, dist := graph.ShortestPath(g, o, d)
-	fmt.Println("Path: ", path)
-	fmt.Printf("Length: %d m", dist)
+
+	if dist == -1 {
+		fmt.Print("Destination cannot be reached.\n")
+		os.Exit(1)
+	}
+
+	fmt.Println("Number Stations: ", dist, " stations")
+	getStations(path, segments, nodeNames)
+}
+
+func getStations(path []int, segments map[int]segment, nodeNames map[int]nodeName) {
+	origin := path[0]
+	for i := 1; i < len(path); i++ {
+		destination := path[i]
+		for j := 0; j < len(segments); j++ {
+			if (segments[j].origin == origin && segments[j].destination == destination) || (segments[j].origin == destination && segments[j].destination == origin) {
+				fmt.Println(segments[j].line, " ", nodeNames[origin].name, "-", nodeNames[destination].name)
+			}
+		}
+		origin = destination
+	}
 }
