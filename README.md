@@ -6,5 +6,5 @@ To run the project the following steps are needed:
           go run main.go <input file name> 
           Example: go run main.go Metro_CDMX.kml
         * In case you want to test the second phase: 
-          go run main.go <input file name> "<origin>" "<destination>"
+          go run main2.go <input file name> "<origin>" "<destination>"
           Example: go run main2.go Metro_CDMX.kml "Tacuba" "Tacubaya"
