@@ -10,6 +10,6 @@ To run the project the following steps are needed:
           Example: go run main2.go Metro_CDMX.kml "Tacuba" "Tacubaya"
         * In case you want to test the third phase:
           -> go run main3.go
-          -> Open your web browser and in the address bar type:
+          -> Open your web browser and in its address bar type:
             localhost:8080/path/<origin>/<destination>
             Example: localhost:8080/path/Tacuba/Tacubaya
